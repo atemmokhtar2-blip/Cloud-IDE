@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { vercelSandboxProvider } from "@/lib/workspace/vercel-sandbox";
 import { validateWorkspacePath } from "@/lib/workspace/security";
+import { runtimeDisabledResponse, runtimeEnabled } from "@/lib/workspace/runtime";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  if (!runtimeEnabled()) return runtimeDisabledResponse();
+
   try {
     const { id } = await context.params;
     const url = new URL(request.url);
@@ -21,6 +24,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 }
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
+  if (!runtimeEnabled()) return runtimeDisabledResponse();
+
   try {
     const { id } = await context.params;
     const body = (await request.json()) as { path?: string; content?: string; action?: string; to?: string };
@@ -45,6 +50,8 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  if (!runtimeEnabled()) return runtimeDisabledResponse();
+
   try {
     const { id } = await context.params;
     const body = (await request.json()) as { path?: string };
@@ -58,6 +65,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  if (!runtimeEnabled()) return runtimeDisabledResponse();
+
   try {
     const { id } = await context.params;
     const path = validateWorkspacePath(new URL(request.url).searchParams.get("path") ?? "");
