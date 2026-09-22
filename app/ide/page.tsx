@@ -9,7 +9,7 @@ const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false 
 
 type FileItem = { name: string; kind: "folder" | "file"; path?: string };
 
-const files: FileItem[] = [
+const starterFiles: FileItem[] = [
   { name: "app", kind: "folder" },
   { name: "page.tsx", kind: "file", path: "app/page.tsx" },
   { name: "layout.tsx", kind: "file", path: "app/layout.tsx" },
@@ -85,6 +85,7 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
 
 export default function IDEPage() {
   const [activeFile, setActiveFile] = useState("app/page.tsx");
+  const [filePaths, setFilePaths] = useState<string[]>(starterFiles.filter((f) => f.path).map((f) => f.path!));
   const [content, setContent] = useState(initialContent["app/page.tsx"]);
   const [terminal, setTerminal] = useState(["$ cloud-ide workspace", "Workspace not started.", "$ "]);
   const [preview, setPreview] = useState("Start a workspace to run your project.");
@@ -108,6 +109,46 @@ export default function IDEPage() {
     }
   }, []);
 
+  async function refreshFiles(id: string) {
+    const data = await api<{ files: string[] }>("/api/workspaces/" + encodeURIComponent(id) + "/files");
+    setFilePaths(data.files);
+  }
+
+  async function createNewFile() {
+    if (!workspaceId) {
+      setTerminal((current) => [...current.slice(-8), "Start the workspace before creating files.", "$ "]);
+      return;
+    }
+    const raw = window.prompt("New file path", "app/new-file.tsx");
+    if (!raw) return;
+    const path = raw.trim();
+    try {
+      await api("/api/workspaces/" + encodeURIComponent(workspaceId) + "/files", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      await refreshFiles(workspaceId);
+      await openFile(path);
+    } catch (error) {
+      setTerminal((current) => [...current.slice(-8), "✕ " + (error instanceof Error ? error.message : "Create failed"), "$ "]);
+    }
+  }
+
+  async function deleteFile(path: string) {
+    if (!workspaceId || !window.confirm("Delete " + path + "?")) return;
+    try {
+      await api("/api/workspaces/" + encodeURIComponent(workspaceId) + "/files?path=" + encodeURIComponent(path), { method: "DELETE" });
+      await refreshFiles(workspaceId);
+      if (activeFile === path) {
+        const next = filePaths.find((item) => item !== path);
+        if (next) await openFile(next);
+      }
+    } catch (error) {
+      setTerminal((current) => [...current.slice(-8), "✕ " + (error instanceof Error ? error.message : "Delete failed"), "$ "]);
+    }
+  }
+
   async function openFile(path: string) {
     setActiveFile(path);
     if (workspaceId) {
@@ -126,6 +167,7 @@ export default function IDEPage() {
       body: JSON.stringify({ projectId: "starter-project" }),
     });
     setWorkspaceId(data.workspace.id);
+    await refreshFiles(data.workspace.id);
 
     const workspacePath = "/api/workspaces/" + encodeURIComponent(data.workspace.id) + "/files";
     try {
@@ -138,6 +180,7 @@ export default function IDEPage() {
           body: JSON.stringify({ path, content: fileContent }),
         });
       }
+      await refreshFiles(data.workspace.id);
     }
     return data.workspace.id;
   }
@@ -231,16 +274,15 @@ export default function IDEPage() {
 
       <div className="ide-layout">
         <aside className="explorer">
-          <div className="explorer-head"><span>EXPLORER</span><button>＋</button></div>
+          <div className="explorer-head"><span>EXPLORER</span><button onClick={() => void createNewFile()} title="New file">＋</button></div>
           <div className="root-name">⌄ STARTER-PROJECT</div>
-          {files.map((file) => (
-            <button
-              key={file.path ?? file.name}
-              className={file.path === activeFile ? "file active" : "file"}
-              onClick={() => file.path && void openFile(file.path)}
-            >
-              <span>{file.kind === "folder" ? "⌄" : "◦"}</span>{file.name}
-            </button>
+          {filePaths.map((path) => (
+            <div key={path} className={path === activeFile ? "file-row active" : "file-row"}>
+              <button className="file" onClick={() => void openFile(path)} title={path}>
+                <span>◦</span><span className="file-name">{path}</span>
+              </button>
+              <button className="file-delete" onClick={() => void deleteFile(path)} title="Delete">×</button>
+            </div>
           ))}
         </aside>
 
