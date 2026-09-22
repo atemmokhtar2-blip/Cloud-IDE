@@ -32,6 +32,7 @@ export default function IDEPage() {
   const [content, setContent] = useState(initialContent["page.tsx"]);
   const [terminal, setTerminal] = useState(["$ cloud-ide workspace", "Workspace not started.", "$ "]);
   const [preview, setPreview] = useState("Start a workspace to run your project.");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const lineCount = useMemo(() => content.split("\n").length, [content]);
@@ -80,12 +81,14 @@ export default function IDEPage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ command: "node --version && printf \\"Cloud IDE workspace ready\\n\"" }),
+          body: JSON.stringify({ command: "if [ ! -d node_modules ]; then npm install --no-audit --no-fund; fi && (nohup npm run dev -- --hostname 0.0.0.0 > /tmp/cloud-ide.log 2>&1 & echo $!)" }),
         },
       );
       const output = [data.result.stdout, data.result.stderr].filter(Boolean).join("\n").trim();
-      setTerminal((current) => [...current.slice(-8), output || "Command completed.", "$ "]);
-      setPreview("Workspace running. Runtime is connected to Vercel Sandbox.");
+      const previewData = await api<{ url: string }>("/api/workspaces/" + encodeURIComponent(id) + "/preview?port=3000");
+      setTerminal((current) => [...current.slice(-8), output || "Development server started.", "Preview: " + previewData.url, "$ "]);
+      setPreview("Live preview is running inside the isolated workspace.");
+      setPreviewUrl(previewData.url);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Runtime error";
       setTerminal((current) => [...current.slice(-8), "✕ " + message, "$ "]);
@@ -123,7 +126,11 @@ export default function IDEPage() {
           <div className="panel-head"><span>PREVIEW</span><span className={workspaceId ? "panel-state" : "panel-state offline"}>{workspaceId ? "● CONNECTED" : "○ OFFLINE"}</span></div>
           <div className="preview-frame">
             <div className="preview-browser"><span>○</span><span>{workspaceId ? "sandbox://workspace" : "cloud-ide://preview"}</span><span>↻</span></div>
-            <div className="preview-content"><div className="preview-logo">C</div><h2>Cloud IDE</h2><p>{preview}</p><button onClick={runCommand} disabled={busy}>{busy ? "Starting…" : "Start workspace"}</button></div>
+            {previewUrl ? (
+              <iframe className="preview-iframe" src={previewUrl} title="Cloud IDE live preview" />
+            ) : (
+              <div className="preview-content"><div className="preview-logo">C</div><h2>Cloud IDE</h2><p>{preview}</p><button onClick={runCommand} disabled={busy}>{busy ? "Starting…" : "Start workspace"}</button></div>
+            )}
           </div>
         </aside>
       </div>
