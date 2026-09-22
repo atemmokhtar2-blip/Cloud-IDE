@@ -20,11 +20,20 @@ const initialContent: Record<string, string> = {
   "README.md": "# Starter project\n\nCreated in Cloud IDE.\n",
 };
 
+async function api<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(url, options);
+  const data = (await response.json()) as T & { error?: string };
+  if (!response.ok) throw new Error(data.error ?? "Request failed");
+  return data;
+}
+
 export default function IDEPage() {
   const [activeFile, setActiveFile] = useState("page.tsx");
   const [content, setContent] = useState(initialContent["page.tsx"]);
-  const [terminal, setTerminal] = useState(["$ cloud-ide workspace", "Workspace ready.", "$ "]);
-  const [preview, setPreview] = useState("Your preview will appear here.");
+  const [terminal, setTerminal] = useState(["$ cloud-ide workspace", "Workspace not started.", "$ "]);
+  const [preview, setPreview] = useState("Start a workspace to run your project.");
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const lineCount = useMemo(() => content.split("\n").length, [content]);
 
   function openFile(path: string) {
@@ -32,17 +41,66 @@ export default function IDEPage() {
     setContent(initialContent[path] ?? "");
   }
 
-  function runCommand() {
-    setTerminal((current) => [...current.slice(-8), "$ npm run dev", "Starting development server...", "✓ Preview server ready", "$ "]);
-    setPreview("Preview server ready — runtime connection will be wired to Vercel Sandbox next.");
+  async function ensureWorkspace() {
+    if (workspaceId) return workspaceId;
+    const data = await api<{ workspace: { id: string } }>("/api/workspaces", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "starter-project" }),
+    });
+    setWorkspaceId(data.workspace.id);
+
+    for (const [path, fileContent] of Object.entries(initialContent)) {
+      await api("/api/workspaces/" + encodeURIComponent(data.workspace.id) + "/files", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, content: fileContent }),
+      });
+    }
+    return data.workspace.id;
+  }
+
+  async function saveActiveFile(id = workspaceId) {
+    if (!id) return;
+    await api("/api/workspaces/" + encodeURIComponent(id) + "/files", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: activeFile, content }),
+    });
+  }
+
+  async function runCommand() {
+    setBusy(true);
+    setTerminal((current) => [...current.slice(-8), "$ cloud-ide run", "Creating isolated workspace..."]);
+    try {
+      const id = await ensureWorkspace();
+      await saveActiveFile(id);
+      const data = await api<{ result: { exitCode: number; stdout: string; stderr: string } }>(
+        "/api/workspaces/" + encodeURIComponent(id) + "/command",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ command: "node --version && printf \\"Cloud IDE workspace ready\\n\"" }),
+        },
+      );
+      const output = [data.result.stdout, data.result.stderr].filter(Boolean).join("\n").trim();
+      setTerminal((current) => [...current.slice(-8), output || "Command completed.", "$ "]);
+      setPreview("Workspace running. Runtime is connected to Vercel Sandbox.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Runtime error";
+      setTerminal((current) => [...current.slice(-8), "✕ " + message, "$ "]);
+      setPreview("Runtime error — check the terminal output.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
     <main className="ide-shell">
       <header className="ide-topbar">
         <a className="ide-brand" href="/"><span className="brand-mark">C</span><span>Cloud IDE</span></a>
-        <div className="workspace-name"><span className="live-dot" /> starter-project</div>
-        <div className="ide-actions"><button onClick={runCommand}>Run</button><button className="deploy">Deploy</button><a href="/dashboard">Dashboard</a></div>
+        <div className="workspace-name"><span className="live-dot" /> {workspaceId ? "workspace connected" : "starter-project"}</div>
+        <div className="ide-actions"><button onClick={runCommand} disabled={busy}>{busy ? "Running…" : "Run"}</button><button className="deploy">Deploy</button><a href="/dashboard">Dashboard</a></div>
       </header>
       <div className="ide-layout">
         <aside className="explorer">
@@ -62,10 +120,10 @@ export default function IDEPage() {
           </div>
         </section>
         <aside className="preview-panel">
-          <div className="panel-head"><span>PREVIEW</span><span className="panel-state">● READY</span></div>
+          <div className="panel-head"><span>PREVIEW</span><span className={workspaceId ? "panel-state" : "panel-state offline"}>{workspaceId ? "● CONNECTED" : "○ OFFLINE"}</span></div>
           <div className="preview-frame">
-            <div className="preview-browser"><span>○</span><span>localhost:3000</span><span>↻</span></div>
-            <div className="preview-content"><div className="preview-logo">C</div><h2>Cloud IDE</h2><p>{preview}</p><button onClick={runCommand}>Start workspace</button></div>
+            <div className="preview-browser"><span>○</span><span>{workspaceId ? "sandbox://workspace" : "cloud-ide://preview"}</span><span>↻</span></div>
+            <div className="preview-content"><div className="preview-logo">C</div><h2>Cloud IDE</h2><p>{preview}</p><button onClick={runCommand} disabled={busy}>{busy ? "Starting…" : "Start workspace"}</button></div>
           </div>
         </aside>
       </div>
