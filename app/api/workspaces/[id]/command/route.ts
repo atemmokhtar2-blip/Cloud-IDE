@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { vercelSandboxProvider } from "@/lib/workspace/vercel-sandbox";
 import { validateCommand } from "@/lib/workspace/security";
+import { runtimeDisabledResponse, runtimeEnabled } from "@/lib/workspace/runtime";
 
 const COMMAND_TIMEOUT_MS = 30_000;
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  if (!runtimeEnabled()) return runtimeDisabledResponse();
+
   try {
     const { id } = await context.params;
     const body = (await request.json()) as { command?: string };
