@@ -21,7 +21,7 @@ function toWorkspace(projectId: string, sandbox: Sandbox): Workspace {
 
 export class VercelSandboxProvider implements WorkspaceProvider {
   async createWorkspace(projectId: string): Promise<Workspace> {
-    const sandbox = await Sandbox.getOrCreate({ name: sandboxName(projectId) });
+    const sandbox = await Sandbox.getOrCreate({ name: sandboxName(projectId), ports: [3000] });
     return toWorkspace(projectId, sandbox);
   }
 
@@ -55,6 +55,11 @@ export class VercelSandboxProvider implements WorkspaceProvider {
   async writeFile(id: string, path: string, content: string): Promise<void> {
     const sandbox = await Sandbox.get({ name: id });
     await sandbox.writeFiles([{ path, content: Buffer.from(content, "utf8") }]);
+  }
+
+  async getPreviewUrl(id: string, port = 3000): Promise<string> {
+    const sandbox = await Sandbox.get({ name: id });
+    return sandbox.domain(port);
   }
 
   async destroyWorkspace(id: string): Promise<void> {
