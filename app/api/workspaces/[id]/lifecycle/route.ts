@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { vercelSandboxProvider } from "@/lib/workspace/vercel-sandbox";
+import { runtimeDisabledResponse, runtimeEnabled } from "@/lib/workspace/runtime";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  if (!runtimeEnabled()) return runtimeDisabledResponse();
+
   try {
     const { id } = await context.params;
     const body = (await request.json()) as { action?: string };
