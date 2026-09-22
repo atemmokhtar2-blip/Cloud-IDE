@@ -127,12 +127,17 @@ export default function IDEPage() {
     });
     setWorkspaceId(data.workspace.id);
 
-    for (const [path, fileContent] of Object.entries(initialContent)) {
-      await api("/api/workspaces/" + encodeURIComponent(data.workspace.id) + "/files", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path, content: fileContent }),
-      });
+    const workspacePath = "/api/workspaces/" + encodeURIComponent(data.workspace.id) + "/files";
+    try {
+      await api(workspacePath + "?path=" + encodeURIComponent("app/page.tsx"));
+    } catch {
+      for (const [path, fileContent] of Object.entries(initialContent)) {
+        await api(workspacePath, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path, content: fileContent }),
+        });
+      }
     }
     return data.workspace.id;
   }
